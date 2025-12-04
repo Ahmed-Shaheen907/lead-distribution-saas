@@ -8,13 +8,15 @@ export default async function LeadLogsPage() {
     .select(
       `
       id,
-      created_at,
-      status,
-      lead_json,
-      agents (
-        name,
-        telegram_chat_id
-      )
+    created_at,
+    status,
+    lead_json,
+    agent_id,
+    agents:agent_id (
+      id,
+      name,
+      telegram_chat_id
+    )
     `
     )
     .eq("company_id", companyId)
