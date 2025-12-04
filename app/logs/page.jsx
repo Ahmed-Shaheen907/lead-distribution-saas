@@ -1,18 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LeadLogsPage() {
-  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
   const [logs, setLogs] = useState([]);
-  const [filters, setFilters] = useState({
-    agent: "",
-    leadName: "",
-    date: "",
-  });
+  const [loading, setLoading] = useState(true);
 
-  // Fetch logs
+  // Filters
+  const [agentFilter, setAgentFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+
+  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
+
+  // Load logs from Supabase
   const loadLogs = async () => {
     const { data, error } = await supabase
       .from("lead_logs")
@@ -23,103 +25,100 @@ export default function LeadLogsPage() {
         status,
         lead_json,
         agent_id,
-        agents:agent_id (
-          id,
-          name
-        )
+        agents:agent_id ( id, name )
       `
       )
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
 
     if (!error) setLogs(data);
+    setLoading(false);
   };
 
+  // 🔥 REALTIME SUBSCRIPTION
   useEffect(() => {
     loadLogs();
 
-    // Subscribe to INSERT events
     const channel = supabase
-      .channel("lead_logs_realtime")
+      .channel("lead_logs_changes")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "lead_logs" },
+        {
+          event: "*",
+          schema: "public",
+          table: "lead_logs",
+        },
         (payload) => {
-          setLogs((prev) => [payload.new, ...prev]);
+          console.log("🔥 REALTIME EVENT:", payload);
+
+          if (payload.eventType === "INSERT") {
+            setLogs((prev) => [payload.new, ...prev]);
+          }
+
+          if (payload.eventType === "UPDATE") {
+            setLogs((prev) =>
+              prev.map((log) => (log.id === payload.new.id ? payload.new : log))
+            );
+          }
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, []);
 
-  // Filtering logic
+  // Apply Filters
   const filteredLogs = logs.filter((log) => {
-    const leadNameMatch = filters.leadName
-      ? log.lead_json?.name
-          ?.toLowerCase()
-          .includes(filters.leadName.toLowerCase())
-      : true;
+    const matchesAgent =
+      agentFilter === "" ||
+      log.agents?.name?.toLowerCase().includes(agentFilter.toLowerCase());
 
-    const agentMatch = filters.agent
-      ? log.agents?.name === filters.agent
-      : true;
+    const matchesName =
+      nameFilter === "" ||
+      log.lead_json?.name?.toLowerCase().includes(nameFilter.toLowerCase());
 
-    const dateMatch = filters.date
-      ? log.created_at.startsWith(filters.date)
-      : true;
+    const matchesDate =
+      dateFilter === "" || log.created_at.startsWith(dateFilter); // YYYY-MM-DD format
 
-    return leadNameMatch && agentMatch && dateMatch;
+    return matchesAgent && matchesName && matchesDate;
   });
+
+  if (loading) return <div className="text-white p-6">Loading...</div>;
 
   return (
     <div className="p-6 text-white">
-      <h1 className="text-3xl font-bold mb-6">Lead Logs</h1>
+      <h1 className="text-3xl font-bold mb-4">Lead Logs</h1>
 
-      {/* FILTERS */}
+      {/* Filters */}
       <div className="flex gap-4 mb-6">
-        {/* Filter by Agent */}
-        <select
-          className="p-2 bg-gray-800 border border-gray-600 rounded"
-          onChange={(e) => setFilters({ ...filters, agent: e.target.value })}
-        >
-          <option value="">All Agents</option>
-          {[...new Set(logs.map((l) => l.agents?.name))].map(
-            (agent, idx) =>
-              agent && (
-                <option key={idx} value={agent}>
-                  {agent}
-                </option>
-              )
-          )}
-        </select>
-
-        {/* Filter by lead name */}
         <input
-          type="text"
-          placeholder="Search Lead Name"
-          className="p-2 bg-gray-800 border border-gray-600 rounded"
-          onChange={(e) => setFilters({ ...filters, leadName: e.target.value })}
+          className="p-2 rounded bg-gray-800"
+          placeholder="Filter by agent name"
+          value={agentFilter}
+          onChange={(e) => setAgentFilter(e.target.value)}
         />
 
-        {/* Filter by date */}
+        <input
+          className="p-2 rounded bg-gray-800"
+          placeholder="Filter by lead name"
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+        />
+
         <input
           type="date"
-          className="p-2 bg-gray-800 border border-gray-600 rounded"
-          onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+          className="p-2 rounded bg-gray-800"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
         />
       </div>
 
-      {filteredLogs.length === 0 && <div>No leads found for this filter.</div>}
-
-      {/* Cards */}
+      {/* Logs */}
       <div className="space-y-4">
         {filteredLogs.map((log) => (
           <div
             key={log.id}
-            className="border border-gray-700 rounded-lg p-4 bg-[#050f24]"
+            className="border border-gray-700 rounded-lg p-4 bg-gray-900"
           >
             <p>
               <strong>Name:</strong> {log.lead_json?.name}
