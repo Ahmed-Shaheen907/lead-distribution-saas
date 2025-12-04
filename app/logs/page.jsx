@@ -48,13 +48,27 @@ export default function LeadLogsPage() {
           schema: "public",
           table: "lead_logs",
         },
-        (payload) => {
+        async (payload) => {
           console.log("🔥 REALTIME EVENT:", payload);
 
+          // ⭐ INSERT EVENT — fetch correct agent name
           if (payload.eventType === "INSERT") {
-            setLogs((prev) => [payload.new, ...prev]);
+            const { data: agentData } = await supabase
+              .from("agents")
+              .select("id, name")
+              .eq("id", payload.new.agent_id)
+              .single();
+
+            const enriched = {
+              ...payload.new,
+              agents: agentData ? { name: agentData.name } : null,
+              lead_json: payload.new.lead_json,
+            };
+
+            setLogs((prev) => [enriched, ...prev]);
           }
 
+          // ⭐ UPDATE EVENT
           if (payload.eventType === "UPDATE") {
             setLogs((prev) =>
               prev.map((log) => (log.id === payload.new.id ? payload.new : log))
@@ -78,7 +92,7 @@ export default function LeadLogsPage() {
       log.lead_json?.name?.toLowerCase().includes(nameFilter.toLowerCase());
 
     const matchesDate =
-      dateFilter === "" || log.created_at.startsWith(dateFilter); // YYYY-MM-DD format
+      dateFilter === "" || log.created_at.startsWith(dateFilter);
 
     return matchesAgent && matchesName && matchesDate;
   });
