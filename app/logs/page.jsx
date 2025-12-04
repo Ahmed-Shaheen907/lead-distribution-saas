@@ -1,48 +1,49 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LeadLogsPage() {
-  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
-
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
+
   useEffect(() => {
-    loadLogs();
+    async function fetchLogs() {
+      const { data, error } = await supabase
+        .from("lead_logs")
+        .select(
+          `
+          id,
+          created_at,
+          status,
+          lead_json,
+          agent_id,
+          agents:agent_id (
+            id,
+            name,
+            telegram_chat_id
+          )
+        `
+        )
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
+
+      if (!error) setLogs(data || []);
+      setLoading(false);
+    }
+
+    fetchLogs();
   }, []);
 
-  const loadLogs = async () => {
-    const { data, error } = await supabase
-      .from("lead_logs")
-      .select(
-        `
-        id,
-        created_at,
-        status,
-        lead_json,
-        agent_id,
-        agents:agent_id (
-          id,
-          name,
-          telegram_chat_id
-        )
-      `
-      )
-      .eq("company_id", companyId)
-      .order("created_at", { ascending: false });
-
-    if (!error) setLogs(data);
-    setLoading(false);
-  };
-
-  if (loading) return <div className="text-white p-6">Loading...</div>;
+  if (loading) return <div className="p-6 text-white">Loading...</div>;
 
   return (
     <div className="p-6 text-white">
       <h1 className="text-3xl font-bold mb-4">Lead Logs</h1>
 
-      {logs.length === 0 && <div>No leads found.</div>}
+      {logs.length === 0 && <div>No leads found for this company.</div>}
 
       <div className="space-y-4">
         {logs.map((log) => (
