@@ -14,7 +14,7 @@ export default function LeadLogsPage() {
 
   const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
 
-  // Load logs from Supabase
+  // Load logs initially
   const loadLogs = async () => {
     const { data, error } = await supabase
       .from("lead_logs")
@@ -35,7 +35,7 @@ export default function LeadLogsPage() {
     setLoading(false);
   };
 
-  // 🔥 REALTIME SUBSCRIPTION
+  // 🔥 REALTIME LISTENER (INSERT + UPDATE)
   useEffect(() => {
     loadLogs();
 
@@ -51,27 +51,43 @@ export default function LeadLogsPage() {
         async (payload) => {
           console.log("🔥 REALTIME EVENT:", payload);
 
-          // ⭐ INSERT EVENT — fetch correct agent name
+          // INSERT → fetch agent name manually
           if (payload.eventType === "INSERT") {
+            const newLog = payload.new;
+
             const { data: agentData } = await supabase
               .from("agents")
               .select("id, name")
-              .eq("id", payload.new.agent_id)
+              .eq("id", newLog.agent_id)
               .single();
 
             const enriched = {
-              ...payload.new,
+              ...newLog,
               agents: agentData ? { name: agentData.name } : null,
-              lead_json: payload.new.lead_json,
             };
 
             setLogs((prev) => [enriched, ...prev]);
           }
 
-          // ⭐ UPDATE EVENT
+          // UPDATE → fetch agent name manually
           if (payload.eventType === "UPDATE") {
+            const updated = payload.new;
+
+            const { data: agentData } = await supabase
+              .from("agents")
+              .select("id, name")
+              .eq("id", updated.agent_id)
+              .single();
+
+            const enrichedUpdate = {
+              ...updated,
+              agents: agentData ? { name: agentData.name } : null,
+            };
+
             setLogs((prev) =>
-              prev.map((log) => (log.id === payload.new.id ? payload.new : log))
+              prev.map((log) =>
+                log.id === enrichedUpdate.id ? enrichedUpdate : log
+              )
             );
           }
         }
@@ -81,7 +97,7 @@ export default function LeadLogsPage() {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // Apply Filters
+  // Apply filters
   const filteredLogs = logs.filter((log) => {
     const matchesAgent =
       agentFilter === "" ||
@@ -127,7 +143,7 @@ export default function LeadLogsPage() {
         />
       </div>
 
-      {/* Logs */}
+      {/* Lead Cards */}
       <div className="space-y-4">
         {filteredLogs.map((log) => (
           <div
