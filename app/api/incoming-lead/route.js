@@ -30,30 +30,23 @@ export async function POST(request) {
 
         console.log("🔥 Incoming lead received:", body);
 
-        // 2) Load agents for this company (for round robin)
+        // 2) Load agents
         const { data: agents, error: agentsError } = await supabase
             .from("agents")
             .select("*")
             .eq("company_id", COMPANY_ID)
             .order("order_index", { ascending: true });
 
-        if (agentsError) {
+        if (agentsError || !agents?.length) {
             console.error("❌ Error loading agents:", agentsError);
-            return new Response(JSON.stringify({ error: "failed to load agents" }), {
-                status: 500,
-            });
-        }
-
-        if (!agents || agents.length === 0) {
-            console.error("❌ No agents found for round robin");
             return new Response(
                 JSON.stringify({ error: "no agents configured for this company" }),
                 { status: 500 }
             );
         }
 
-        // 3) Determine next agent via round robin
-        const { data: previousLogs, error: previousError } = await supabase
+        // 3) Determine next agent (round robin)
+        const { data: previousLogs } = await supabase
             .from("lead_logs")
             .select("selected_agent_index")
             .eq("company_id", COMPANY_ID)
@@ -61,20 +54,13 @@ export async function POST(request) {
             .order("created_at", { ascending: false })
             .limit(1);
 
-        if (previousError) {
-            console.error("⚠️ Error loading previous lead_logs:", previousError);
-        }
-
         let nextIndex = 0;
-        if (
-            previousLogs &&
-            previousLogs.length > 0 &&
-            previousLogs[0].selected_agent_index != null
-        ) {
+        if (previousLogs?.length > 0) {
             nextIndex = (previousLogs[0].selected_agent_index + 1) % agents.length;
         }
 
         const selectedAgent = agents[nextIndex];
+
         console.log("🎯 Selected agent:", {
             id: selectedAgent.id,
             name: selectedAgent.name,
@@ -82,14 +68,14 @@ export async function POST(request) {
             order_index: selectedAgent.order_index,
         });
 
-        // 4) Insert lead into lead_logs with assignment
+        // 4) INSERT lead into lead_logs WITH agent_name added
         const leadLogPayload = {
             company_id: COMPANY_ID,
-            lead_json: body, // raw lead data (name, phone, job, message, etc.)
+            lead_json: body,
             agent_id: selectedAgent.id,
+            agent_name: selectedAgent.name, // 🔥 FIX HERE
             selected_agent_index: nextIndex,
             status: "sent",
-            // this is just raw description/message if present; n8n will do full formatting
             lead_text: body.message ?? null,
         };
 
@@ -106,9 +92,9 @@ export async function POST(request) {
             });
         }
 
-        console.log("✅ Lead stored in lead_logs:", leadLog.id);
+        console.log("✅ Lead stored:", leadLog.id);
 
-        // 5) Call n8n webhook so it can format + send Telegram message
+        // 5) Trigger n8n
         const webhookUrl = process.env.N8N_WEBHOOK_URL || N8N_WEBHOOK_FALLBACK;
 
         if (webhookUrl) {
@@ -119,25 +105,20 @@ export async function POST(request) {
                     body: JSON.stringify({
                         lead_log_id: leadLog.id,
                         company_id: COMPANY_ID,
-                        agent: selectedAgent, // includes telegram_chat_id
-                        lead: body, // raw lead data for n8n to format
+                        agent: selectedAgent,
+                        lead: body,
                     }),
                 });
 
                 if (!webhookRes.ok) {
-                    console.error(
-                        "⚠️ n8n webhook responded with non-2xx:",
-                        webhookRes.status
-                    );
+                    console.error("⚠️ n8n webhook error:", webhookRes.status);
                 }
-            } catch (webhookErr) {
-                console.error("⚠️ Error calling n8n webhook:", webhookErr);
+            } catch (err) {
+                console.error("⚠️ Error calling n8n webhook:", err);
             }
-        } else {
-            console.warn("⚠️ No N8N webhook URL configured");
         }
 
-        // 6) Return a clean response for n8n / debugging
+        // 6) Return clean API response
         return new Response(
             JSON.stringify({
                 success: true,
@@ -152,7 +133,7 @@ export async function POST(request) {
             { status: 200 }
         );
     } catch (err) {
-        console.error("❌ Unhandled error in /api/incoming-lead:", err);
+        console.error("❌ Unhandled error:", err);
         return new Response(JSON.stringify({ error: "server error" }), {
             status: 500,
         });

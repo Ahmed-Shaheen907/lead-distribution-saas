@@ -14,7 +14,7 @@ export default function LeadLogsPage() {
 
   const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
 
-  // Load logs initially
+  // Initial load
   const loadLogs = async () => {
     const { data, error } = await supabase
       .from("lead_logs")
@@ -24,8 +24,7 @@ export default function LeadLogsPage() {
         created_at,
         status,
         lead_json,
-        agent_id,
-        agents:agent_id ( id, name )
+        agent_name
       `
       )
       .eq("company_id", companyId)
@@ -35,7 +34,6 @@ export default function LeadLogsPage() {
     setLoading(false);
   };
 
-  // 🔥 REALTIME LISTENER (INSERT + UPDATE)
   useEffect(() => {
     loadLogs();
 
@@ -43,64 +41,17 @@ export default function LeadLogsPage() {
       .channel("lead_logs_changes")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "lead_logs",
-        },
-        async (payload) => {
+        { event: "*", schema: "public", table: "lead_logs" },
+        (payload) => {
           console.log("🔥 REALTIME EVENT:", payload);
 
-          // INSERT → fetch agent name manually
           if (payload.eventType === "INSERT") {
-            const newLog = payload.new;
-
-            // Retry fetching agent in case commit isn't finished
-            let agentData = null;
-
-            for (let i = 0; i < 3; i++) {
-              const { data } = await supabase
-                .from("agents")
-                .select("id, name")
-                .eq("id", newLog.agent_id)
-                .single();
-
-              if (data) {
-                agentData = data;
-                break;
-              }
-
-              // wait 120ms between retries
-              await new Promise((res) => setTimeout(res, 120));
-            }
-
-            const enriched = {
-              ...newLog,
-              agents: agentData ? { name: agentData.name } : null,
-            };
-
-            setLogs((prev) => [enriched, ...prev]);
+            setLogs((prev) => [payload.new, ...prev]);
           }
 
-          // UPDATE → fetch agent name manually
           if (payload.eventType === "UPDATE") {
-            const updated = payload.new;
-
-            const { data: agentData } = await supabase
-              .from("agents")
-              .select("id, name")
-              .eq("id", updated.agent_id)
-              .single();
-
-            const enrichedUpdate = {
-              ...updated,
-              agents: agentData ? { name: agentData.name } : null,
-            };
-
             setLogs((prev) =>
-              prev.map((log) =>
-                log.id === enrichedUpdate.id ? enrichedUpdate : log
-              )
+              prev.map((log) => (log.id === payload.new.id ? payload.new : log))
             );
           }
         }
@@ -110,11 +61,11 @@ export default function LeadLogsPage() {
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // Apply filters
+  // Filters
   const filteredLogs = logs.filter((log) => {
     const matchesAgent =
       agentFilter === "" ||
-      log.agents?.name?.toLowerCase().includes(agentFilter.toLowerCase());
+      log.agent_name?.toLowerCase().includes(agentFilter.toLowerCase());
 
     const matchesName =
       nameFilter === "" ||
@@ -156,7 +107,7 @@ export default function LeadLogsPage() {
         />
       </div>
 
-      {/* Lead Cards */}
+      {/* Lead cards */}
       <div className="space-y-4">
         {filteredLogs.map((log) => (
           <div
@@ -176,7 +127,7 @@ export default function LeadLogsPage() {
               <strong>Description:</strong> {log.lead_json?.description}
             </p>
             <p>
-              <strong>Sent To:</strong> {log.agents?.name || "Unknown"}
+              <strong>Sent To:</strong> {log.agent_name}
             </p>
             <p>
               <strong>Status:</strong> {log.status}
