@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 const COMPANY_ID = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
 const N8N_WEBHOOK_FALLBACK =
-    "https://ahmedshaheen19.app.n8n.cloud/webhook-test/3120d6e3-7db3-4deb-a39d-b41c49919b0e";
+    "https://ahmedshaheen19.app.n8n.cloud/webhook/3120d6e3-7db3-4deb-a39d-b41c49919b0e";
 
 export async function POST(request) {
     try {
