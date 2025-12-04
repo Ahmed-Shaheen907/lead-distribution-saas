@@ -52,7 +52,7 @@ export default async function LeadLogsPage() {
               <strong>Description:</strong> {log.lead_json?.description}
             </p>
             <p>
-              <strong>Sent To:</strong> {log.agents?.name}
+              <strong>Sent To:</strong> {log.agents?.name || "Unknown"}
             </p>
             <p>
               <strong>Status:</strong> {log.status}
