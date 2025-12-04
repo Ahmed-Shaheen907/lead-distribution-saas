@@ -4,52 +4,122 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LeadLogsPage() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
   const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
+  const [logs, setLogs] = useState([]);
+  const [filters, setFilters] = useState({
+    agent: "",
+    leadName: "",
+    date: "",
+  });
+
+  // Fetch logs
+  const loadLogs = async () => {
+    const { data, error } = await supabase
+      .from("lead_logs")
+      .select(
+        `
+        id,
+        created_at,
+        status,
+        lead_json,
+        agent_id,
+        agents:agent_id (
+          id,
+          name
+        )
+      `
+      )
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+
+    if (!error) setLogs(data);
+  };
 
   useEffect(() => {
-    async function fetchLogs() {
-      const { data, error } = await supabase
-        .from("lead_logs")
-        .select(
-          `
-          id,
-          created_at,
-          status,
-          lead_json,
-          agent_id,
-          agents:agent_id (
-            id,
-            name,
-            telegram_chat_id
-          )
-        `
-        )
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
+    loadLogs();
 
-      if (!error) setLogs(data || []);
-      setLoading(false);
-    }
+    // Subscribe to INSERT events
+    const channel = supabase
+      .channel("lead_logs_realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "lead_logs" },
+        (payload) => {
+          setLogs((prev) => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
 
-    fetchLogs();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  if (loading) return <div className="p-6 text-white">Loading...</div>;
+  // Filtering logic
+  const filteredLogs = logs.filter((log) => {
+    const leadNameMatch = filters.leadName
+      ? log.lead_json?.name
+          ?.toLowerCase()
+          .includes(filters.leadName.toLowerCase())
+      : true;
+
+    const agentMatch = filters.agent
+      ? log.agents?.name === filters.agent
+      : true;
+
+    const dateMatch = filters.date
+      ? log.created_at.startsWith(filters.date)
+      : true;
+
+    return leadNameMatch && agentMatch && dateMatch;
+  });
 
   return (
     <div className="p-6 text-white">
-      <h1 className="text-3xl font-bold mb-4">Lead Logs</h1>
+      <h1 className="text-3xl font-bold mb-6">Lead Logs</h1>
 
-      {logs.length === 0 && <div>No leads found for this company.</div>}
+      {/* FILTERS */}
+      <div className="flex gap-4 mb-6">
+        {/* Filter by Agent */}
+        <select
+          className="p-2 bg-gray-800 border border-gray-600 rounded"
+          onChange={(e) => setFilters({ ...filters, agent: e.target.value })}
+        >
+          <option value="">All Agents</option>
+          {[...new Set(logs.map((l) => l.agents?.name))].map(
+            (agent, idx) =>
+              agent && (
+                <option key={idx} value={agent}>
+                  {agent}
+                </option>
+              )
+          )}
+        </select>
 
+        {/* Filter by lead name */}
+        <input
+          type="text"
+          placeholder="Search Lead Name"
+          className="p-2 bg-gray-800 border border-gray-600 rounded"
+          onChange={(e) => setFilters({ ...filters, leadName: e.target.value })}
+        />
+
+        {/* Filter by date */}
+        <input
+          type="date"
+          className="p-2 bg-gray-800 border border-gray-600 rounded"
+          onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+        />
+      </div>
+
+      {filteredLogs.length === 0 && <div>No leads found for this filter.</div>}
+
+      {/* Cards */}
       <div className="space-y-4">
-        {logs.map((log) => (
+        {filteredLogs.map((log) => (
           <div
             key={log.id}
-            className="border border-gray-700 rounded-lg p-4 bg-gray-900"
+            className="border border-gray-700 rounded-lg p-4 bg-[#050f24]"
           >
             <p>
               <strong>Name:</strong> {log.lead_json?.name}
