@@ -55,11 +55,24 @@ export default function LeadLogsPage() {
           if (payload.eventType === "INSERT") {
             const newLog = payload.new;
 
-            const { data: agentData } = await supabase
-              .from("agents")
-              .select("id, name")
-              .eq("id", newLog.agent_id)
-              .single();
+            // Retry fetching agent in case commit isn't finished
+            let agentData = null;
+
+            for (let i = 0; i < 3; i++) {
+              const { data } = await supabase
+                .from("agents")
+                .select("id, name")
+                .eq("id", newLog.agent_id)
+                .single();
+
+              if (data) {
+                agentData = data;
+                break;
+              }
+
+              // wait 120ms between retries
+              await new Promise((res) => setTimeout(res, 120));
+            }
 
             const enriched = {
               ...newLog,
