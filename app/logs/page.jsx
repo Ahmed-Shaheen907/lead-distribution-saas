@@ -1,22 +1,24 @@
+"use client";
+
 import supabase from "@/lib/supabaseClient";
 
 export default async function LeadLogsPage() {
-  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed"; // (later: read from logged-in user)
+  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
 
   const { data: logs, error } = await supabase
     .from("lead_logs")
     .select(
       `
       id,
-    created_at,
-    status,
-    lead_json,
-    agent_id,
-    agents:agent_id (
-      id,
-      name,
-      telegram_chat_id
-    )
+      created_at,
+      status,
+      lead_json,
+      agent_id,
+      agents:agent_id (
+        id,
+        name,
+        telegram_chat_id
+      )
     `
     )
     .eq("company_id", companyId)
