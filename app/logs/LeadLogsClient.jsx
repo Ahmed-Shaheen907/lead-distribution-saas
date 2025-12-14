@@ -164,7 +164,7 @@ export default function LeadLogsPage({ user }) {
               <strong>Phone:</strong> {log.lead_json?.phone}
             </p>
             <p>
-              <strong>Job:</strong> {log.lead_json?.job}
+              <strong>Job:</strong> {log.lead_json?.job_title}
             </p>
             <p>
               <strong>Description:</strong> {log.lead_json?.description}
