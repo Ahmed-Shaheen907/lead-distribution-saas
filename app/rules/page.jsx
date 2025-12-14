@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 export default function RoutingRulesPage() {
   const [botToken, setBotToken] = useState("");
   const [loading, setLoading] = useState(true);
-  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed"; // Your company ID
+
+  const companyId = "c1fd70c2-bb2e-46fa-bd12-bfe48fb88eed";
 
   // Load rule from Supabase
   const loadRule = async () => {

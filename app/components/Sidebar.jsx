@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 
-// Icons from lucide
+// Icons
 import {
   LayoutDashboard,
   Users,
@@ -29,6 +30,7 @@ export default function Sidebar() {
         LeadFlow AI
       </div>
 
+      {/* NAVIGATION LINKS */}
       <nav className="flex-1 p-2">
         {menu.map((item) => {
           const isActive = pathname === item.href;
@@ -52,6 +54,16 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* LOGOUT BUTTON */}
+      <div className="p-4 border-t">
+        <button
+          onClick={() => signOut()}
+          className="w-full p-2 text-red-600 font-medium rounded-lg hover:bg-red-100 transition-all"
+        >
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }

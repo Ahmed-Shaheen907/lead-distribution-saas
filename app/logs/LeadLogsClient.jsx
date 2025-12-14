@@ -1,34 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-const PAGE_SIZE = 15;
-
-export default function LeadLogsPage() {
-  const { data: session, status } = useSession();
-
+export default function LeadLogsPage({ user }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
   const [agentFilter, setAgentFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
 
-  // Pagination
+  const PAGE_SIZE = 15;
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  const companyId = session?.user?.company_id;
+  const companyId = user?.company_id;
 
+  // Fetch logs
   const loadLogs = async () => {
-    if (!companyId) return;
-
     setLoading(true);
 
-    // Count
     const { count } = await supabase
       .from("lead_logs")
       .select("*", { count: "exact", head: true })
@@ -39,34 +31,30 @@ export default function LeadLogsPage() {
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Data
     const { data, error } = await supabase
       .from("lead_logs")
-      .select("id, created_at, status, lead_json, agent_name, company_id")
+      .select(
+        `
+        id,
+        created_at,
+        status,
+        lead_json,
+        agent_name
+      `
+      )
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .range(from, to);
 
-    if (error) {
-      console.error("Error loading logs:", error);
-      setLogs([]);
-    } else {
-      setLogs(data || []);
-    }
-
+    if (!error) setLogs(data);
     setLoading(false);
   };
 
-  // Load when session + page ready
+  // Load and subscribe to changes
   useEffect(() => {
-    if (status !== "authenticated" || !companyId) return;
-    loadLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, companyId, page]);
+    if (!companyId) return;
 
-  // Realtime — only for this company, and only on page 1
-  useEffect(() => {
-    if (status !== "authenticated" || !companyId) return;
+    loadLogs();
 
     const channel = supabase
       .channel("lead_logs_changes")
@@ -74,7 +62,6 @@ export default function LeadLogsPage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "lead_logs" },
         (payload) => {
-          if (payload.new?.company_id !== companyId) return;
           if (page !== 1) return;
 
           if (payload.eventType === "INSERT") {
@@ -90,13 +77,11 @@ export default function LeadLogsPage() {
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, companyId, page]);
+    return () => supabase.removeChannel(channel);
+  }, [page, companyId]);
 
-  // Apply UI filters
+  if (loading) return <div className="text-white p-6">Loading...</div>;
+
   const filteredLogs = logs.filter((log) => {
     const matchesAgent =
       agentFilter === "" ||
@@ -112,19 +97,7 @@ export default function LeadLogsPage() {
     return matchesAgent && matchesName && matchesDate;
   });
 
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-
-  if (status === "loading") {
-    return <div className="text-white p-6">Loading session…</div>;
-  }
-
-  if (status === "unauthenticated") {
-    return <div className="text-white p-6">Not authenticated.</div>;
-  }
-
-  if (loading) {
-    return <div className="text-white p-6">Loading logs…</div>;
-  }
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <div className="p-6 text-white">
@@ -182,7 +155,7 @@ export default function LeadLogsPage() {
         {filteredLogs.map((log) => (
           <div
             key={log.id}
-            className="border border-gray-700 rounded-lg p-4 bg-[#020617]"
+            className="border border-gray-700 rounded-lg p-4 bg-gray-900"
           >
             <p>
               <strong>Name:</strong> {log.lead_json?.name}
