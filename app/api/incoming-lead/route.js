@@ -26,16 +26,31 @@ export async function POST(req) {
 
         const companyId = company.id;
 
+        // Build readable lead text for UI + logs
+        const leadText =
+            `👤 Name: ${body.name || body.Name || "N/A"}\n` +
+            `📞 Phone: ${body.phone || body.Phone || "N/A"}\n` +
+            `🧑‍💼 Job: ${body.job_title || body.Job_Title || "N/A"}\n` +
+            `📝 Description: ${body.description || body.Description || "N/A"}`;
+
         // 2️⃣ Insert lead into database
         const { data: lead, error: leadError } = await supabase
             .from("lead_logs")
             .insert({
                 company_id: companyId,
                 lead_json: body,
+
+                // ✅ REQUIRED for Lead Logs UI
+                lead_text: leadText,
+                agent_id: selectedAgent.id,
+                agent_name: selectedAgent.name,
+                selected_agent_index: selectedAgent.order_index,
+
                 status: "sent",
             })
             .select()
             .single();
+
 
         if (leadError) {
             console.log("Lead insert error:", leadError);
