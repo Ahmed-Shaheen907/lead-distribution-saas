@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabaseClient";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function POST(req) {
+    console.log("🔥 NEW CODE RUNNING — VERSION 2 — WITH AGENT + LEAD_TEXT");
+
     try {
         /* ===============================
            1️⃣ Parse request + API key
