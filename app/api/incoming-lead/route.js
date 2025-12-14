@@ -27,21 +27,23 @@ export async function POST(req) {
         const companyId = company.id;
 
         // Build readable lead text for UI + logs
+        // Build readable lead text
         const leadText =
-            `👤 Name: ${body.name || body.Name || "N/A"}\n` +
-            `📞 Phone: ${body.phone || body.Phone || "N/A"}\n` +
-            `🧑‍💼 Job: ${body.job_title || body.Job_Title || "N/A"}\n` +
-            `📝 Description: ${body.description || body.Description || "N/A"}`;
+            `👤 Name: ${body.name || "N/A"}\n` +
+            `📞 Phone: ${body.phone || "N/A"}\n` +
+            `🧑‍💼 Job: ${body.job_title || "N/A"}\n` +
+            `📝 Description: ${body.description || "N/A"}`;
 
-        // 2️⃣ Insert lead into database
+        // Insert lead
         const { data: lead, error: leadError } = await supabase
             .from("lead_logs")
             .insert({
                 company_id: companyId,
-                lead_json: body,
 
-                // ✅ REQUIRED for Lead Logs UI
+                lead_json: body,
                 lead_text: leadText,
+
+                // ✅ THESE FIX "Sent To"
                 agent_id: selectedAgent.id,
                 agent_name: selectedAgent.name,
                 selected_agent_index: selectedAgent.order_index,
