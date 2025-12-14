@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-// Your Telegram bot token
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function POST(req) {
     try {
+        /* ===============================
+           1️⃣ Parse request + API key
+        =============================== */
         const body = await req.json();
         const companyApiKey = req.headers.get("x-company-key");
 
@@ -13,7 +15,9 @@ export async function POST(req) {
             return NextResponse.json({ error: "Missing API key" }, { status: 401 });
         }
 
-        // 1️⃣ Validate API key → find company
+        /* ===============================
+           2️⃣ Validate company
+        =============================== */
         const { data: company, error: companyError } = await supabase
             .from("companies")
             .select("id")
@@ -26,43 +30,22 @@ export async function POST(req) {
 
         const companyId = company.id;
 
-        // Build readable lead text for UI + logs
-        // Build readable lead text
-        const leadText =
-            `👤 Name: ${body.name || "N/A"}\n` +
-            `📞 Phone: ${body.phone || "N/A"}\n` +
-            `🧑‍💼 Job: ${body.job_title || "N/A"}\n` +
-            `📝 Description: ${body.description || "N/A"}`;
+        /* ===============================
+           3️⃣ Normalize incoming body
+           (THIS IS THE SECRET SAUCE)
+        =============================== */
+        const normalizedBody = {
+            name: body.name || body.Name || null,
+            phone: body.phone || body.Phone || null,
+            job_title: body.job_title || body.Job_Title || null,
+            description: body.description || body.Description || null,
+            ad_name: body.ad_name || body["Ad Name"] || null,
+            message: body.message || body.Message || null,
+        };
 
-        // Insert lead
-        const { data: lead, error: leadError } = await supabase
-            .from("lead_logs")
-            .insert({
-                company_id: companyId,
-
-                lead_json: body,
-                lead_text: leadText,
-
-                // ✅ THESE FIX "Sent To"
-                agent_id: selectedAgent.id,
-                agent_name: selectedAgent.name,
-                selected_agent_index: selectedAgent.order_index,
-
-                status: "sent",
-            })
-            .select()
-            .single();
-
-
-        if (leadError) {
-            console.log("Lead insert error:", leadError);
-            return NextResponse.json(
-                { error: "Failed to store lead" },
-                { status: 500 }
-            );
-        }
-
-        // 3️⃣ Fetch agents for round robin
+        /* ===============================
+           4️⃣ Fetch agents (round robin)
+        =============================== */
         const { data: agents, error: agentsError } = await supabase
             .from("agents")
             .select("*")
@@ -76,47 +59,81 @@ export async function POST(req) {
             );
         }
 
-        // Pick first agent in sorted list
         const selectedAgent = agents[0];
 
-        // 4️⃣ Rotate the agent order (round robin)
-        const rotatedAgents = [...agents.slice(1), agents[0]];
-
-        // Update indexes
-        for (let i = 0; i < rotatedAgents.length; i++) {
-            rotatedAgents[i].order_index = i;
-        }
+        /* ===============================
+           5️⃣ Rotate agents
+        =============================== */
+        const rotatedAgents = [...agents.slice(1), agents[0]].map((a, i) => ({
+            ...a,
+            order_index: i,
+        }));
 
         await supabase.from("agents").upsert(rotatedAgents);
 
-        // 5️⃣ Send lead to agent via Telegram
-        const msg = `📣 *New Lead Assigned*\n\n` +
-            `👤 *Name:* ${body.name || "N/A"}\n` +
-            `📞 *Phone:* ${body.phone || "N/A"}\n` +
-            `📝 *Notes:* ${body.notes || "None"}\n\n` +
-            `🚀 *You are next in the rotation*`;
+        /* ===============================
+           6️⃣ Build UI-friendly text
+        =============================== */
+        const leadText =
+            `👤 Name: ${normalizedBody.name ?? "N/A"}\n` +
+            `📞 Phone: ${normalizedBody.phone ?? "N/A"}\n` +
+            `🧑‍💼 Job: ${normalizedBody.job_title ?? "N/A"}\n` +
+            `📝 Description: ${normalizedBody.description ?? "N/A"}\n` +
+            `📢 Ad: ${normalizedBody.ad_name ?? "N/A"}`;
 
-        await fetch(
-            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    chat_id: selectedAgent.telegram_chat_id,
-                    text: msg,
-                    parse_mode: "Markdown",
-                }),
-            }
-        );
+        /* ===============================
+           7️⃣ Insert lead (CORRECT ORDER)
+        =============================== */
+        const { error: leadError } = await supabase
+            .from("lead_logs")
+            .insert({
+                company_id: companyId,
 
-        // 6️⃣ Return success
+                lead_json: normalizedBody,
+                lead_text: leadText,
+
+                agent_id: selectedAgent.id,
+                agent_name: selectedAgent.name,
+                selected_agent_index: selectedAgent.order_index,
+
+                status: "sent",
+            });
+
+        if (leadError) {
+            console.log("Lead insert error:", leadError);
+            return NextResponse.json({ error: "Failed to store lead" }, { status: 500 });
+        }
+
+        /* ===============================
+           8️⃣ Send Telegram message
+        =============================== */
+        const telegramMsg =
+            `📣 *New Lead Assigned*\n\n` +
+            `👤 *Name:* ${normalizedBody.name ?? "N/A"}\n` +
+            `📞 *Phone:* ${normalizedBody.phone ?? "N/A"}\n` +
+            `🧑‍💼 *Job:* ${normalizedBody.job_title ?? "N/A"}\n` +
+            `📢 *Ad:* ${normalizedBody.ad_name ?? "N/A"}`;
+
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                chat_id: selectedAgent.telegram_chat_id,
+                text: telegramMsg,
+                parse_mode: "Markdown",
+            }),
+        });
+
+        /* ===============================
+           9️⃣ Success response
+        =============================== */
         return NextResponse.json({
             success: true,
-            message: "Lead stored and sent to agent",
             sent_to: selectedAgent.name,
         });
+
     } catch (err) {
-        console.log("Unexpected error:", err);
+        console.error("Unexpected error:", err);
         return NextResponse.json({ error: "Server error" }, { status: 500 });
     }
 }
