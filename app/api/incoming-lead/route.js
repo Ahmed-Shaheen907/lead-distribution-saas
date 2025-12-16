@@ -112,7 +112,7 @@ export async function POST(req) {
                 body: JSON.stringify({
                     chat_id: selectedAgent.telegram_chat_id,
                     text: telegramMessage,
-                    parse_mode: "Markdown",
+                    parse_mode: "HTML",
                 }),
             }
         );
