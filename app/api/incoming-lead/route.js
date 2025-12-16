@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const TELEGRAM_BOT_TOKEN = 8549123258: AAGMXgvTuU7dm6voFSnHAUa6Z8eLQI8mNrU;
+const TELEGRAM_BOT_TOKEN = '8549123258: AAGMXgvTuU7dm6voFSnHAUa6Z8eLQI8mNrU';
 
 export async function POST(req) {
     try {
