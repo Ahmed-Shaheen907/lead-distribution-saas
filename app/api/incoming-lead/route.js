@@ -1,7 +1,10 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const N8N_WEBHOOK_URL = 'https://ahmedshaheen19.app.n8n.cloud/webhook/374b3435-faf3-410f-84f0-8dad25ccdacb';
+const N8N_WEBHOOK_URL =
+    "https://ahmedshaheen19.app.n8n.cloud/webhook/374b3435-faf3-410f-84f0-8dad25ccdacb";
 
 export async function POST(req) {
     console.log("🔥 Incoming lead received");
@@ -27,13 +30,13 @@ export async function POST(req) {
         /* ===============================
            2️⃣ Validate company
         =============================== */
-        const { data: company, error: companyError } = await supabase
+        const { data: company } = await supabase
             .from("companies")
             .select("id")
             .eq("api_key", companyApiKey)
             .single();
 
-        if (companyError || !company) {
+        if (!company) {
             return NextResponse.json(
                 { error: "Invalid API key" },
                 { status: 403 }
@@ -55,7 +58,7 @@ export async function POST(req) {
         };
 
         /* ===============================
-           4️⃣ Pick agent (round robin)
+           4️⃣ Pick agent
         =============================== */
         const { data: agents } = await supabase
             .from("agents")
@@ -95,25 +98,21 @@ export async function POST(req) {
         });
 
         /* ===============================
-           7️⃣ CALL n8n WEBHOOK ✅
+           7️⃣ CALL n8n WEBHOOK 🔥
         =============================== */
-        if (N8N_WEBHOOK_URL) {
-            await fetch(N8N_WEBHOOK_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    company_id: companyId,
-
-                    agent: {
-                        id: selectedAgent.id,
-                        name: selectedAgent.name,
-                        telegram_chat_id: selectedAgent.telegram_chat_id,
-                    },
-
-                    lead,
-                }),
-            });
-        }
+        await fetch(N8N_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                company_id: companyId,
+                agent: {
+                    id: selectedAgent.id,
+                    name: selectedAgent.name,
+                    telegram_chat_id: selectedAgent.telegram_chat_id,
+                },
+                lead,
+            }),
+        });
 
         /* ===============================
            8️⃣ Response
