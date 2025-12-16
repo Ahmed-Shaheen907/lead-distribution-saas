@@ -138,6 +138,7 @@ export async function POST(req) {
             telegram_sent: telegramSent,
             fallback_to_n8n: !telegramSent,
             agent_id: selectedAgent.id,
+            telegram_chat_id: selectedAgent.telegram_chat_id,
         });
 
     } catch (err) {
