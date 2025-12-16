@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 
 export default function SetupPage() {
   const { data: session } = useSession();
-  const companyId = session?.user?.company_id || "";
+  const companyId = session?.user?.id || "";
   const [copied, setCopied] = useState(false);
 
   const codeTemplate = `//For use with the Watch Changes module. Paste the webhook URL and company ID from your scenario here:
