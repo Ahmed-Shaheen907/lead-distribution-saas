@@ -1,33 +1,26 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
 export async function POST(req) {
     console.log("🔥 Incoming lead received");
 
     try {
         const body = await req.json();
 
-        /* ===============================
-           1️⃣ Read API key (HEADER OR BODY)
-        =============================== */
+        // 1) Read company API key (header OR body)
         const companyApiKey =
             req.headers.get("x-company-key") ||
             body.company_api_key ||
             body.COMPANY_API_KEY;
 
         if (!companyApiKey) {
-            console.error("❌ Missing company API key");
             return NextResponse.json(
-                { error: "Missing API key" },
+                { success: false, error: "Missing API key" },
                 { status: 401 }
             );
         }
 
-        /* ===============================
-           2️⃣ Validate company
-        =============================== */
+        // 2) Validate company by api_key
         const { data: company, error: companyError } = await supabase
             .from("companies")
             .select("id")
@@ -35,18 +28,15 @@ export async function POST(req) {
             .single();
 
         if (companyError || !company) {
-            console.error("❌ Invalid API key:", companyApiKey);
             return NextResponse.json(
-                { error: "Invalid API key" },
+                { success: false, error: "Invalid API key" },
                 { status: 403 }
             );
         }
 
         const companyId = company.id;
 
-        /* ===============================
-           3️⃣ Normalize incoming body
-        =============================== */
+        // 3) Normalize incoming body
         const normalizedBody = {
             name: body.name || body.Name || null,
             phone: body.phone || body.Phone || null,
@@ -56,38 +46,38 @@ export async function POST(req) {
             message: body.message || body.Message || null,
         };
 
-        /* ===============================
-           4️⃣ Fetch agents (round robin)
-        =============================== */
+        // 4) Fetch agents (round robin order)
         const { data: agents, error: agentsError } = await supabase
             .from("agents")
-            .select("*")
+            .select("id,name,telegram_chat_id,order_index")
             .eq("company_id", companyId)
             .order("order_index", { ascending: true });
 
         if (agentsError || !agents?.length) {
-            console.error("❌ No agents for company:", companyId);
             return NextResponse.json(
-                { error: "No agents found" },
+                { success: false, error: "No agents found for this company" },
                 { status: 400 }
             );
         }
 
         const selectedAgent = agents[0];
 
-        /* ===============================
-           5️⃣ Rotate agents
-        =============================== */
+        // 5) Rotate agents (move first to end, reindex)
         const rotatedAgents = [...agents.slice(1), agents[0]].map((a, i) => ({
             ...a,
             order_index: i,
         }));
 
-        await supabase.from("agents").upsert(rotatedAgents);
+        const { error: rotateError } = await supabase
+            .from("agents")
+            .upsert(rotatedAgents, { onConflict: "id" });
 
-        /* ===============================
-           6️⃣ Build lead text
-        =============================== */
+        if (rotateError) {
+            console.error("❌ Rotate error:", rotateError);
+            // not fatal: we can still proceed
+        }
+
+        // 6) Build lead text
         const leadText =
             `👤 Name: ${normalizedBody.name ?? "N/A"}\n` +
             `📞 Phone: ${normalizedBody.phone ?? "N/A"}\n` +
@@ -95,48 +85,42 @@ export async function POST(req) {
             `📝 Description: ${normalizedBody.description ?? "N/A"}\n` +
             `📢 Ad: ${normalizedBody.ad_name ?? "N/A"}`;
 
-        /* ===============================
-           7️⃣ Insert lead
-        =============================== */
-        const { error: leadError } = await supabase
-            .from("lead_logs")
-            .insert({
-                company_id: companyId,
-                lead_json: normalizedBody,
-                lead_text: leadText,
-                agent_id: selectedAgent.id,
-                agent_name: selectedAgent.name,
-                selected_agent_index: selectedAgent.order_index,
-                status: "sent",
-            });
+        // 7) Insert lead log
+        const { error: leadError } = await supabase.from("lead_logs").insert({
+            company_id: companyId,
+            lead_json: normalizedBody,
+            lead_text: leadText,
+            agent_id: selectedAgent.id,
+            agent_name: selectedAgent.name,
+            selected_agent_index: selectedAgent.order_index,
+            status: "sent",
+        });
 
         if (leadError) {
             console.error("❌ Lead insert error:", leadError);
             return NextResponse.json(
-                { error: "Failed to store lead" },
+                { success: false, error: "Failed to store lead" },
                 { status: 500 }
             );
         }
 
-        /* ===============================
-           9️⃣ Success
-        =============================== */
+        // ✅ 8) Return response WITH telegram_chat_id (TOP LEVEL)
         return NextResponse.json({
             success: true,
             company_id: companyId,
-            agent: {
-                id: selectedAgent.id,
-                name: selectedAgent.name,
-                telegram_chat_id: selectedAgent.telegram_chat_id,
-                order_index: selectedAgent.order_index,
-            },
+
+            // keep your existing field
+            sent_to: selectedAgent.name,
+
+            // ✅ add these so n8n sees them clearly
+            agent_id: selectedAgent.id,
+            telegram_chat_id: selectedAgent.telegram_chat_id,
+            order_index: selectedAgent.order_index,
         });
-
-
     } catch (err) {
         console.error("🔥 Unexpected error:", err);
         return NextResponse.json(
-            { error: "Server error" },
+            { success: false, error: "Server error" },
             { status: 500 }
         );
     }
