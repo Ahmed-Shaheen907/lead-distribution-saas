@@ -119,40 +119,19 @@ export async function POST(req) {
         }
 
         /* ===============================
-           8️⃣ Send Telegram
-        =============================== */
-        if (!selectedAgent.telegram_chat_id) {
-            console.error("❌ Agent has no telegram_chat_id");
-            return NextResponse.json(
-                { error: "Agent missing Telegram ID" },
-                { status: 400 }
-            );
-        }
-
-        const telegramMsg =
-            `📣 *New Lead Assigned*\n\n` +
-            `👤 *Name:* ${normalizedBody.name ?? "N/A"}\n` +
-            `📞 *Phone:* ${normalizedBody.phone ?? "N/A"}\n` +
-            `🧑‍💼 *Job:* ${normalizedBody.job_title ?? "N/A"}\n` +
-            `📢 *Ad:* ${normalizedBody.ad_name ?? "N/A"}`;
-
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                chat_id: selectedAgent.telegram_chat_id,
-                text: telegramMsg,
-                parse_mode: "Markdown",
-            }),
-        });
-
-        /* ===============================
            9️⃣ Success
         =============================== */
         return NextResponse.json({
             success: true,
-            sent_to: selectedAgent.name,
+            company_id: companyId,
+            agent: {
+                id: selectedAgent.id,
+                name: selectedAgent.name,
+                telegram_chat_id: selectedAgent.telegram_chat_id,
+                order_index: selectedAgent.order_index,
+            },
         });
+
 
     } catch (err) {
         console.error("🔥 Unexpected error:", err);
