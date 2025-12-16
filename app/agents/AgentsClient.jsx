@@ -118,10 +118,6 @@ export default function AgentsClient({ user }) {
     <div className="p-6 text-white">
       <h1 className="text-3xl font-bold mb-6">Agents</h1>
 
-      <p className="text-green-400 font-mono mb-4">
-        Logged in as company: {companyId}
-      </p>
-
       {/* Add agent form */}
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6 max-w-md">
         <h2 className="text-xl mb-3 font-semibold">Add Agent</h2>
