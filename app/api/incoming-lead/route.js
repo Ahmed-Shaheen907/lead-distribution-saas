@@ -4,17 +4,25 @@ import { supabase } from "@/lib/supabaseClient";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function POST(req) {
-    console.log("🔥 NEW CODE RUNNING — VERSION 2 — WITH AGENT + LEAD_TEXT");
+    console.log("🔥 Incoming lead received");
 
     try {
-        /* ===============================
-           1️⃣ Parse request + API key
-        =============================== */
         const body = await req.json();
-        const companyApiKey = req.headers.get("x-company-key");
+
+        /* ===============================
+           1️⃣ Read API key (HEADER OR BODY)
+        =============================== */
+        const companyApiKey =
+            req.headers.get("x-company-key") ||
+            body.company_api_key ||
+            body.COMPANY_API_KEY;
 
         if (!companyApiKey) {
-            return NextResponse.json({ error: "Missing API key" }, { status: 401 });
+            console.error("❌ Missing company API key");
+            return NextResponse.json(
+                { error: "Missing API key" },
+                { status: 401 }
+            );
         }
 
         /* ===============================
@@ -27,14 +35,17 @@ export async function POST(req) {
             .single();
 
         if (companyError || !company) {
-            return NextResponse.json({ error: "Invalid API key" }, { status: 403 });
+            console.error("❌ Invalid API key:", companyApiKey);
+            return NextResponse.json(
+                { error: "Invalid API key" },
+                { status: 403 }
+            );
         }
 
         const companyId = company.id;
 
         /* ===============================
            3️⃣ Normalize incoming body
-           (THIS IS THE SECRET SAUCE)
         =============================== */
         const normalizedBody = {
             name: body.name || body.Name || null,
@@ -54,9 +65,10 @@ export async function POST(req) {
             .eq("company_id", companyId)
             .order("order_index", { ascending: true });
 
-        if (agentsError || !agents.length) {
+        if (agentsError || !agents?.length) {
+            console.error("❌ No agents for company:", companyId);
             return NextResponse.json(
-                { error: "No agents found for this company" },
+                { error: "No agents found" },
                 { status: 400 }
             );
         }
@@ -74,7 +86,7 @@ export async function POST(req) {
         await supabase.from("agents").upsert(rotatedAgents);
 
         /* ===============================
-           6️⃣ Build UI-friendly text
+           6️⃣ Build lead text
         =============================== */
         const leadText =
             `👤 Name: ${normalizedBody.name ?? "N/A"}\n` +
@@ -84,31 +96,39 @@ export async function POST(req) {
             `📢 Ad: ${normalizedBody.ad_name ?? "N/A"}`;
 
         /* ===============================
-           7️⃣ Insert lead (CORRECT ORDER)
+           7️⃣ Insert lead
         =============================== */
         const { error: leadError } = await supabase
             .from("lead_logs")
             .insert({
                 company_id: companyId,
-
                 lead_json: normalizedBody,
                 lead_text: leadText,
-
                 agent_id: selectedAgent.id,
                 agent_name: selectedAgent.name,
                 selected_agent_index: selectedAgent.order_index,
-
                 status: "sent",
             });
 
         if (leadError) {
-            console.log("Lead insert error:", leadError);
-            return NextResponse.json({ error: "Failed to store lead" }, { status: 500 });
+            console.error("❌ Lead insert error:", leadError);
+            return NextResponse.json(
+                { error: "Failed to store lead" },
+                { status: 500 }
+            );
         }
 
         /* ===============================
-           8️⃣ Send Telegram message
+           8️⃣ Send Telegram
         =============================== */
+        if (!selectedAgent.telegram_chat_id) {
+            console.error("❌ Agent has no telegram_chat_id");
+            return NextResponse.json(
+                { error: "Agent missing Telegram ID" },
+                { status: 400 }
+            );
+        }
+
         const telegramMsg =
             `📣 *New Lead Assigned*\n\n` +
             `👤 *Name:* ${normalizedBody.name ?? "N/A"}\n` +
@@ -127,7 +147,7 @@ export async function POST(req) {
         });
 
         /* ===============================
-           9️⃣ Success response
+           9️⃣ Success
         =============================== */
         return NextResponse.json({
             success: true,
@@ -135,7 +155,10 @@ export async function POST(req) {
         });
 
     } catch (err) {
-        console.error("Unexpected error:", err);
-        return NextResponse.json({ error: "Server error" }, { status: 500 });
+        console.error("🔥 Unexpected error:", err);
+        return NextResponse.json(
+            { error: "Server error" },
+            { status: 500 }
+        );
     }
 }
