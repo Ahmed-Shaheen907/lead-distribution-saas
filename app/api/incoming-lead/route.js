@@ -67,29 +67,33 @@ export async function POST(req) {
 
         await supabase.from("agents").upsert(rotated);
 
-        /* 6️⃣ SAVE LEAD */
+        /* 6️⃣ BUILD LEAD TEXT (UI SAFE) */
+        const leadText =
+            `👤 Name: ${lead.name}\n` +
+            `📞 Phone: ${lead.phone}\n` +
+            `🧑‍💼 Job: ${lead.job_title}\n` +
+            `📢 Ad: ${lead.ad_name}\n\n` +
+            `${lead.message}`;
+
+        /* 7️⃣ SAVE LEAD */
         await supabase.from("lead_logs").insert({
             company_id: companyId,
             agent_id: selectedAgent.id,
             agent_name: selectedAgent.name,
             selected_agent_index: selectedAgent.order_index,
+
             lead_json: lead,
-            status: "assigned",
+            lead_text: leadText,      // ✅ REQUIRED FOR UI
+            status: "assigned",       // ✅ OPTION B
+            telegram_chat_id: selectedAgent.telegram_chat_id,
+            telegram_sent: false,
         });
 
-        /* 7️⃣ TELEGRAM TRY */
+
         let telegramSent = false;
         let telegramError = null;
 
         if (selectedAgent.telegram_chat_id) {
-            const message =
-                `📣 New Lead Assigned\n\n` +
-                `👤 Name: ${lead.name}\n` +
-                `📞 Phone: ${lead.phone}\n` +
-                `🧑‍💼 Job: ${lead.job_title}\n` +
-                `📢 Ad: ${lead.ad_name}\n\n` +
-                `${lead.message}`;
-
             try {
                 const tgRes = await fetch(
                     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -98,7 +102,7 @@ export async function POST(req) {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             chat_id: selectedAgent.telegram_chat_id,
-                            text: message,
+                            text: leadText,
                         }),
                     }
                 );
@@ -111,6 +115,20 @@ export async function POST(req) {
                 telegramError = err.message;
             }
         }
+
+        /* 🔄 UPDATE LEAD DELIVERY STATUS */
+        await supabase
+            .from("lead_logs")
+            .update({
+                telegram_sent: telegramSent,
+                telegram_error: telegramError,
+                status: telegramSent ? "sent" : "assigned",
+            })
+            .eq("company_id", companyId)
+            .eq("agent_id", selectedAgent.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
 
         /* 8️⃣ FALLBACK → N8N */
         if (!telegramSent && N8N_WEBHOOK_URL) {

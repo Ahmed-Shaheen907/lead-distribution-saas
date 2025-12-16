@@ -12,12 +12,10 @@ export default function LeadLogsPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
   const [agentFilter, setAgentFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
 
-  // Pagination
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -28,7 +26,6 @@ export default function LeadLogsPage() {
 
     setLoading(true);
 
-    // Count
     const { count } = await supabase
       .from("lead_logs")
       .select("*", { count: "exact", head: true })
@@ -39,32 +36,23 @@ export default function LeadLogsPage() {
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Data
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("lead_logs")
       .select("id, created_at, status, lead_json, agent_name, company_id")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .range(from, to);
 
-    if (error) {
-      console.error("Error loading logs:", error);
-      setLogs([]);
-    } else {
-      setLogs(data || []);
-    }
-
+    setLogs(data || []);
     setLoading(false);
   };
 
-  // Load when session + page ready
   useEffect(() => {
     if (status !== "authenticated" || !companyId) return;
     loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, companyId, page]);
 
-  // Realtime — only for this company, and only on page 1
   useEffect(() => {
     if (status !== "authenticated" || !companyId) return;
 
@@ -78,25 +66,43 @@ export default function LeadLogsPage() {
           if (page !== 1) return;
 
           if (payload.eventType === "INSERT") {
-            setLogs((prev) => [payload.new, ...prev.slice(0, PAGE_SIZE - 1)]);
+            setLogs((prev) => [
+              {
+                id: payload.new.id,
+                created_at: payload.new.created_at,
+                status: payload.new.status,
+                lead_json: payload.new.lead_json,
+                agent_name: payload.new.agent_name,
+                company_id: payload.new.company_id,
+              },
+              ...prev.slice(0, PAGE_SIZE - 1),
+            ]);
           }
 
           if (payload.eventType === "UPDATE") {
             setLogs((prev) =>
-              prev.map((log) => (log.id === payload.new.id ? payload.new : log))
+              prev.map((log) =>
+                log.id === payload.new.id
+                  ? {
+                      id: payload.new.id,
+                      created_at: payload.new.created_at,
+                      status: payload.new.status,
+                      lead_json: payload.new.lead_json,
+                      agent_name: payload.new.agent_name,
+                      company_id: payload.new.company_id,
+                    }
+                  : log
+              )
             );
           }
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, companyId, page]);
 
-  // Apply UI filters
   const filteredLogs = logs.filter((log) => {
     const matchesAgent =
       agentFilter === "" ||
@@ -112,36 +118,31 @@ export default function LeadLogsPage() {
     return matchesAgent && matchesName && matchesDate;
   });
 
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  if (status === "loading") {
-    return <div className="text-white p-6">Loading session…</div>;
+  if (status === "loading" || loading) {
+    return <div className="text-white p-6">Loading…</div>;
   }
 
   if (status === "unauthenticated") {
-    return <div className="text-white p-6">Not authenticated.</div>;
-  }
-
-  if (loading) {
-    return <div className="text-white p-6">Loading logs…</div>;
+    return <div className="text-white p-6">Not authenticated</div>;
   }
 
   return (
     <div className="p-6 text-white">
       <h1 className="text-3xl font-bold mb-4">Lead Logs</h1>
 
-      {/* Filters */}
       <div className="flex gap-4 mb-6">
         <input
           className="p-2 rounded bg-gray-800"
-          placeholder="Filter by agent name"
+          placeholder="Filter by agent"
           value={agentFilter}
           onChange={(e) => setAgentFilter(e.target.value)}
         />
 
         <input
           className="p-2 rounded bg-gray-800"
-          placeholder="Filter by lead name"
+          placeholder="Filter by name"
           value={nameFilter}
           onChange={(e) => setNameFilter(e.target.value)}
         />
@@ -154,7 +155,6 @@ export default function LeadLogsPage() {
         />
       </div>
 
-      {/* Pagination */}
       <div className="mb-4 flex items-center gap-4">
         <button
           disabled={page === 1}
@@ -177,7 +177,6 @@ export default function LeadLogsPage() {
         </button>
       </div>
 
-      {/* Cards */}
       <div className="space-y-4">
         {filteredLogs.map((log) => (
           <div
@@ -200,7 +199,14 @@ export default function LeadLogsPage() {
               <strong>Sent To:</strong> {log.agent_name}
             </p>
             <p>
-              <strong>Status:</strong> {log.status}
+              <strong>Status:</strong>{" "}
+              <span
+                className={
+                  log.status === "sent" ? "text-green-400" : "text-yellow-400"
+                }
+              >
+                {log.status}
+              </span>
             </p>
             <p>
               <strong>Date:</strong> {new Date(log.created_at).toLocaleString()}
