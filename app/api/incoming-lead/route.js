@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
-const TELEGRAM_BOT_TOKEN = '8549123258: AAGMXgvTuU7dm6voFSnHAUa6Z8eLQI8mNrU';
+const TELEGRAM_BOT_TOKEN = '8549123258:AAGMXgvTuU7dm6voFSnHAUa6Z8eLQI8mNrU';
 
 export async function POST(req) {
     try {
@@ -112,7 +112,7 @@ export async function POST(req) {
                 body: JSON.stringify({
                     chat_id: selectedAgent.telegram_chat_id,
                     text: telegramMessage,
-                    parse_mode: "HTML",
+                    parse_mode: "Markdown",
                 }),
             }
         );
