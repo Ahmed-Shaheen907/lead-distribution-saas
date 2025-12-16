@@ -7,6 +7,8 @@ const N8N_WEBHOOK_URL =
     "https://ahmedshaheen19.app.n8n.cloud/webhook/374b3435-faf3-410f-84f0-8dad25ccdacb";
 
 export async function POST(req) {
+    console.log("🚀 DEPLOYED VERSION — WEBHOOK ENABLED");
+
     console.log("🔥 Incoming lead received");
 
     try {
