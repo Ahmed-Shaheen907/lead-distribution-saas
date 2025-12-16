@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
+const N8N_WEBHOOK_URL = 'https://ahmedshaheen19.app.n8n.cloud/webhook/374b3435-faf3-410f-84f0-8dad25ccdacb';
+
 export async function POST(req) {
     console.log("🔥 Incoming lead received");
 
     try {
         const body = await req.json();
 
-        // 1) Read company API key (header OR body)
+        /* ===============================
+           1️⃣ Read company API key
+        =============================== */
         const companyApiKey =
             req.headers.get("x-company-key") ||
             body.company_api_key ||
@@ -15,12 +19,14 @@ export async function POST(req) {
 
         if (!companyApiKey) {
             return NextResponse.json(
-                { success: false, error: "Missing API key" },
+                { error: "Missing company API key" },
                 { status: 401 }
             );
         }
 
-        // 2) Validate company by api_key
+        /* ===============================
+           2️⃣ Validate company
+        =============================== */
         const { data: company, error: companyError } = await supabase
             .from("companies")
             .select("id")
@@ -29,15 +35,17 @@ export async function POST(req) {
 
         if (companyError || !company) {
             return NextResponse.json(
-                { success: false, error: "Invalid API key" },
+                { error: "Invalid API key" },
                 { status: 403 }
             );
         }
 
         const companyId = company.id;
 
-        // 3) Normalize incoming body
-        const normalizedBody = {
+        /* ===============================
+           3️⃣ Normalize lead
+        =============================== */
+        const lead = {
             name: body.name || body.Name || null,
             phone: body.phone || body.Phone || null,
             job_title: body.job_title || body.Job_Title || null,
@@ -46,81 +54,81 @@ export async function POST(req) {
             message: body.message || body.Message || null,
         };
 
-        // 4) Fetch agents (round robin order)
-        const { data: agents, error: agentsError } = await supabase
+        /* ===============================
+           4️⃣ Pick agent (round robin)
+        =============================== */
+        const { data: agents } = await supabase
             .from("agents")
-            .select("id,name,telegram_chat_id,order_index")
+            .select("*")
             .eq("company_id", companyId)
             .order("order_index", { ascending: true });
 
-        if (agentsError || !agents?.length) {
+        if (!agents?.length) {
             return NextResponse.json(
-                { success: false, error: "No agents found for this company" },
+                { error: "No agents found" },
                 { status: 400 }
             );
         }
 
         const selectedAgent = agents[0];
 
-        // 5) Rotate agents (move first to end, reindex)
-        const rotatedAgents = [...agents.slice(1), agents[0]].map((a, i) => ({
+        /* ===============================
+           5️⃣ Rotate agents
+        =============================== */
+        const rotated = [...agents.slice(1), agents[0]].map((a, i) => ({
             ...a,
             order_index: i,
         }));
 
-        const { error: rotateError } = await supabase
-            .from("agents")
-            .upsert(rotatedAgents, { onConflict: "id" });
+        await supabase.from("agents").upsert(rotated);
 
-        if (rotateError) {
-            console.error("❌ Rotate error:", rotateError);
-            // not fatal: we can still proceed
-        }
-
-        // 6) Build lead text
-        const leadText =
-            `👤 Name: ${normalizedBody.name ?? "N/A"}\n` +
-            `📞 Phone: ${normalizedBody.phone ?? "N/A"}\n` +
-            `🧑‍💼 Job: ${normalizedBody.job_title ?? "N/A"}\n` +
-            `📝 Description: ${normalizedBody.description ?? "N/A"}\n` +
-            `📢 Ad: ${normalizedBody.ad_name ?? "N/A"}`;
-
-        // 7) Insert lead log
-        const { error: leadError } = await supabase.from("lead_logs").insert({
+        /* ===============================
+           6️⃣ Store lead
+        =============================== */
+        await supabase.from("lead_logs").insert({
             company_id: companyId,
-            lead_json: normalizedBody,
-            lead_text: leadText,
             agent_id: selectedAgent.id,
             agent_name: selectedAgent.name,
             selected_agent_index: selectedAgent.order_index,
-            status: "sent",
+            lead_json: lead,
+            status: "assigned",
         });
 
-        if (leadError) {
-            console.error("❌ Lead insert error:", leadError);
-            return NextResponse.json(
-                { success: false, error: "Failed to store lead" },
-                { status: 500 }
-            );
+        /* ===============================
+           7️⃣ CALL n8n WEBHOOK ✅
+        =============================== */
+        if (N8N_WEBHOOK_URL) {
+            await fetch(N8N_WEBHOOK_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    company_id: companyId,
+
+                    agent: {
+                        id: selectedAgent.id,
+                        name: selectedAgent.name,
+                        telegram_chat_id: selectedAgent.telegram_chat_id,
+                    },
+
+                    lead,
+                }),
+            });
         }
 
-        // ✅ 8) Return response WITH telegram_chat_id (TOP LEVEL)
+        /* ===============================
+           8️⃣ Response
+        =============================== */
         return NextResponse.json({
             success: true,
             company_id: companyId,
-
-            // keep your existing field
-            sent_to: selectedAgent.name,
-
-            // ✅ add these so n8n sees them clearly
             agent_id: selectedAgent.id,
             telegram_chat_id: selectedAgent.telegram_chat_id,
-            order_index: selectedAgent.order_index,
         });
+
     } catch (err) {
-        console.error("🔥 Unexpected error:", err);
+        console.error("🔥 Server error:", err);
         return NextResponse.json(
-            { success: false, error: "Server error" },
+            { error: "Server error" },
             { status: 500 }
         );
     }
