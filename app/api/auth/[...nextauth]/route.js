@@ -1,73 +1,61 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
-import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+import { compare } from "bcrypt";
+import { supabaseAdmin } from "@/lib/supabaseAdminClient"; // Reuse the admin client
 
 export const authOptions = {
-    session: { strategy: "jwt" },
-
     providers: [
         CredentialsProvider({
             name: "Credentials",
             credentials: {
-                email: { label: "Email", type: "text" },
+                email: { label: "Email", type: "email" },
                 password: { label: "Password", type: "password" },
             },
-
             async authorize(credentials) {
-                if (!credentials?.email || !credentials?.password) {
-                    return null;
-                }
+                const { email, password } = credentials;
 
-                // 🔹 Get user from *public.users* (NOT auth.users)
-                const { data: dbUser, error } = await supabaseAdmin
+                // 1. Fetch user from YOUR public.users table
+                const { data: user } = await supabaseAdmin
                     .from("users")
                     .select("*")
-                    .eq("email", credentials.email)
+                    .eq("email", email)
                     .single();
 
-                if (error || !dbUser) {
-                    console.error("No user row found or DB error", error);
-                    return null;
+                if (!user) {
+                    throw new Error("No user found");
                 }
 
-                // 🔹 Compare password with password_hash column
-                const passwordMatch = await bcrypt.compare(
-                    credentials.password,
-                    dbUser.password_hash
-                );
-
-                if (!passwordMatch) {
-                    console.error("Password mismatch");
-                    return null;
+                // 2. Verify Password
+                const isValid = await compare(password, user.password_hash);
+                if (!isValid) {
+                    throw new Error("Invalid password");
                 }
 
-                // What NextAuth stores in the JWT
+                // 3. Return user object (NextAuth saves this to the JWT)
                 return {
-                    id: dbUser.id,
-                    email: dbUser.email,
-                    company_id: dbUser.company_id,
+                    id: user.id,
+                    email: user.email,
+                    company_id: user.company_id
                 };
             },
         }),
     ],
-
     callbacks: {
         async jwt({ token, user }) {
             if (user) {
+                token.id = user.id;
                 token.company_id = user.company_id;
             }
             return token;
         },
-
         async session({ session, token }) {
-            // make sure session.user exists
-            session.user = session.user || {};
-            session.user.id = token.sub;
+            session.user.id = token.id;
             session.user.company_id = token.company_id;
             return session;
         },
     },
+    session: { strategy: "jwt" },
+    secret: process.env.NEXTAUTH_SECRET,
 };
 
 const handler = NextAuth(authOptions);
